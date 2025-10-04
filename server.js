@@ -1167,48 +1167,41 @@
 
 
 
-
-
-//postgress
+// PostgreSQL + Express setup
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
-const { Pool } = require("pg"); // ✅ PostgreSQL client
+const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ Database connection (Render environment variable)
+// Database connection using Render environment variable
 const pool = new Pool({
-  connectionString: process.env.DB_URL, // e.g. postgresql://user:pass@host/db
-  ssl: { rejectUnauthorized: false }, // important for Render
+  connectionString: process.env.DB_URL || process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
 });
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// ✅ PROPER BODY PARSER MIDDLEWARE
-app.use(bodyParser.json({
-  limit: "10mb",
-  verify: (req, res, buf) => {
-    req.rawBody = buf;
-  },
-}));
-app.use(bodyParser.urlencoded({
-  extended: true,
-  limit: "10mb",
-}));
+// Body parser middleware
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 
-// ✅ CORS ENABLED
+// CORS middleware
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
 
-// 📍 Test PostgreSQL connection
+// Test PostgreSQL connection
 app.get("/api/testdb", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
@@ -1219,27 +1212,20 @@ app.get("/api/testdb", async (req, res) => {
   }
 });
 
-// 🏠 Homepage - Device selection
+// Homepage - Device selection & latest location
 app.get("/", async (req, res) => {
   try {
     const devicesResult = await pool.query(
-      `SELECT device_mac, device_name, vehicle_number 
-       FROM gps_devices 
-       WHERE is_active = 'YES' 
-       ORDER BY device_name`
+      `SELECT device_mac, device_name, vehicle_number FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
     );
 
     const devices = devicesResult.rows;
-
     let gpsData = null;
     const defaultDevice = devices.length > 0 ? devices[0].device_mac : null;
 
     if (defaultDevice) {
       const gpsResult = await pool.query(
-        `SELECT latitude, longitude, log_date 
-         FROM gps_tracking 
-         WHERE device_mac = $1 
-         ORDER BY log_date DESC LIMIT 1`,
+        `SELECT latitude, longitude, log_date FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
         [defaultDevice]
       );
 
@@ -1256,7 +1242,7 @@ app.get("/", async (req, res) => {
   }
 });
 
-// 📥 Insert GPS data
+// Insert GPS data + auto-register device if new
 app.post("/api/gps", async (req, res) => {
   const { latitude, longitude, device_mac, speed, direction } = req.body;
 
@@ -1264,21 +1250,13 @@ app.post("/api/gps", async (req, res) => {
     return res.status(400).json({ error: "Latitude, Longitude & Device MAC required" });
 
   try {
-    const deviceCheck = await pool.query(
-      `SELECT device_id FROM gps_devices WHERE device_mac = $1`,
-      [device_mac]
-    );
+    const deviceCheck = await pool.query(`SELECT device_id FROM gps_devices WHERE device_mac=$1`, [device_mac]);
 
     if (deviceCheck.rows.length === 0) {
       await pool.query(
         `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
          VALUES ($1, $2, $3, $4, 'YES')`,
-        [
-          device_mac,
-          `Device-${device_mac.slice(-6)}`,
-          `Vehicle-${device_mac.slice(-6)}`,
-          "Not Assigned",
-        ]
+        [device_mac, `Device-${device_mac.slice(-6)}`, `Vehicle-${device_mac.slice(-6)}`, "Not Assigned"]
       );
       console.log(`✅ New device registered: ${device_mac}`);
     }
@@ -1296,40 +1274,29 @@ app.post("/api/gps", async (req, res) => {
   }
 });
 
-// 🧭 Latest location API
+// Latest location API
 app.get("/api/latest", async (req, res) => {
   const { device_mac } = req.query;
-
   if (!device_mac) return res.status(400).json({ error: "Device MAC required" });
 
   try {
     const result = await pool.query(
-      `SELECT latitude, longitude, log_date, speed, direction
-       FROM gps_tracking 
-       WHERE device_mac = $1 
-       ORDER BY log_date DESC LIMIT 1`,
+      `SELECT latitude, longitude, log_date, speed, direction FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
       [device_mac]
     );
 
-    if (result.rows.length > 0) {
-      res.json(result.rows[0]);
-    } else {
-      res.json({ message: "No data found for this device" });
-    }
+    res.json(result.rows.length > 0 ? result.rows[0] : { message: "No data found for this device" });
   } catch (err) {
     console.error("DB Fetch Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// 📋 List of all active devices
+// List all active devices
 app.get("/api/devices", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT device_mac, device_name, vehicle_number, driver_name 
-       FROM gps_devices 
-       WHERE is_active = 'YES' 
-       ORDER BY device_name`
+      `SELECT device_mac, device_name, vehicle_number, driver_name FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
     );
     res.json(result.rows);
   } catch (err) {
@@ -1338,16 +1305,13 @@ app.get("/api/devices", async (req, res) => {
   }
 });
 
-// 📊 Device History
+// Device History
 app.get("/api/history/:device_mac", async (req, res) => {
   const { device_mac } = req.params;
 
   try {
     const result = await pool.query(
-      `SELECT latitude, longitude, log_date, speed, direction 
-       FROM gps_tracking 
-       WHERE device_mac = $1 
-       ORDER BY log_date DESC`,
+      `SELECT latitude, longitude, log_date, speed, direction FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC`,
       [device_mac]
     );
     res.json(result.rows);
@@ -1357,7 +1321,7 @@ app.get("/api/history/:device_mac", async (req, res) => {
   }
 });
 
-// 🚀 Start server
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`✅ Connected to PostgreSQL successfully!`);
