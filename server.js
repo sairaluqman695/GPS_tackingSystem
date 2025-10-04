@@ -1164,8 +1164,7 @@
 // });
 
 
-//postgress
-
+//postgress// server.js
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
@@ -1174,18 +1173,21 @@ const { Pool } = require("pg");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Database connection using Render environment variable
+// -------------------- PostgreSQL Setup --------------------
 const pool = new Pool({
   connectionString: process.env.DB_URL || process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
+// -------------------- Express Setup --------------------
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
+// Body parser
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 
+// CORS middleware
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
@@ -1197,7 +1199,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Test DB
+// -------------------- Routes --------------------
+
+// Test database connection
 app.get("/api/testdb", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
@@ -1207,14 +1211,18 @@ app.get("/api/testdb", async (req, res) => {
   }
 });
 
-// Insert GPS + auto-register device
+// Insert GPS data + auto-register device
 app.post("/api/gps", async (req, res) => {
   const { latitude, longitude, device_mac, speed, direction } = req.body;
-  if (!latitude || !longitude || !device_mac) return res.status(400).json({ error: "Latitude, Longitude & Device MAC required" });
+  if (!latitude || !longitude || !device_mac)
+    return res.status(400).json({ error: "Latitude, Longitude & Device MAC required" });
 
   try {
-    // Check device
-    const deviceCheck = await pool.query(`SELECT device_id FROM gps_devices WHERE device_mac=$1`, [device_mac]);
+    const deviceCheck = await pool.query(
+      `SELECT device_id FROM gps_devices WHERE device_mac=$1`,
+      [device_mac]
+    );
+
     if (deviceCheck.rows.length === 0) {
       await pool.query(
         `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
@@ -1237,7 +1245,7 @@ app.post("/api/gps", async (req, res) => {
   }
 });
 
-// Get latest location
+// Get latest location for a device
 app.get("/api/latest", async (req, res) => {
   const { device_mac } = req.query;
   if (!device_mac) return res.status(400).json({ error: "Device MAC required" });
@@ -1255,7 +1263,7 @@ app.get("/api/latest", async (req, res) => {
   }
 });
 
-// Device history
+// Get device history
 app.get("/api/history/:device_mac", async (req, res) => {
   const { device_mac } = req.params;
 
@@ -1271,7 +1279,7 @@ app.get("/api/history/:device_mac", async (req, res) => {
   }
 });
 
-// List devices
+// List all active devices
 app.get("/api/devices", async (req, res) => {
   try {
     const result = await pool.query(
@@ -1284,7 +1292,37 @@ app.get("/api/devices", async (req, res) => {
   }
 });
 
-// Start server
+// -------------------- Homepage --------------------
+app.get("/", async (req, res) => {
+  try {
+    const devicesResult = await pool.query(
+      `SELECT device_mac, device_name, vehicle_number FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
+    );
+
+    const devices = devicesResult.rows;
+    let gpsData = null;
+    const defaultDevice = devices.length > 0 ? devices[0].device_mac : null;
+
+    if (defaultDevice) {
+      const gpsResult = await pool.query(
+        `SELECT latitude, longitude, log_date FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
+        [defaultDevice]
+      );
+
+      if (gpsResult.rows.length > 0) {
+        const { latitude, longitude, log_date } = gpsResult.rows[0];
+        gpsData = { latitude, longitude, log_date, device_mac: defaultDevice };
+      }
+    }
+
+    res.render("map", { gpsData, devices, selectedDevice: defaultDevice });
+  } catch (err) {
+    console.error("DB Error:", err);
+    res.status(500).send("Error loading map");
+  }
+});
+
+// -------------------- Start Server --------------------
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`✅ Connected to PostgreSQL successfully!`);
