@@ -54,14 +54,10 @@
       <% }); %>
     </select>
 
-    <div class="device-info" id="currentDevice">
-      Device: Loading...
-    </div>
+    <div class="device-info" id="currentDevice">Device: Loading...</div>
 
     <div class="controls">
-      <button onclick="toggleSmoothMovement()" class="smooth-controls">
-        🎯 Smooth Movement: ON
-      </button>
+      <button onclick="toggleSmoothMovement()" class="smooth-controls">🎯 Smooth Movement: ON</button>
       <button onclick="clearPath()">🗑️ Clear Path</button>
       <button onclick="toggleAutoCenter()">🎯 Auto-Center: ON</button>
     </div>
@@ -74,11 +70,7 @@
   <script id="gps-data" type="application/json">
     <%- JSON.stringify(
       gpsData && !isNaN(gpsData.latitude) && !isNaN(gpsData.longitude)
-        ? { 
-            lat: gpsData.latitude, 
-            lng: gpsData.longitude,
-            device_mac: gpsData.device_mac
-          }
+        ? { lat: gpsData.latitude, lng: gpsData.longitude, device_mac: gpsData.device_mac }
         : { lat: 32.447811, lng: 74.495567, device_mac: '' }
     ) %>
   </script>
@@ -91,7 +83,6 @@
     let smoothMovement = true;
     let currentDevice = gps.device_mac;
     let isAnimating = false;
-    let lastPosition = null;
 
     function initMap() {
       map = new google.maps.Map(document.getElementById("map"), {
@@ -100,97 +91,78 @@
         mapTypeId: 'roadmap'
       });
 
-      infoWindow = new google.maps.InfoWindow({
-        content: "Loading..."
-      });
-
+      infoWindow = new google.maps.InfoWindow({ content: "Loading..." });
       initializeTracking();
-      updateDeviceInfo();
     }
 
-    function initializeTracking() {
-      // Purane elements clear karo
-      if (marker) marker.setMap(null);
-      if (pathPolyline) pathPolyline.setMap(null);
-      
-      pathCoordinates = [{ lat: gps.lat, lng: gps.lng }];
-      lastPosition = { lat: gps.lat, lng: gps.lng };
-      
-      // New polyline banayein
-      pathPolyline = new google.maps.Polyline({
-        path: pathCoordinates,
-        geodesic: true,
-        strokeColor: "#007bff",
-        strokeOpacity: 1.0,
-        strokeWeight: 4,
-        map: map
-      });
+    async function initializeTracking() {
+      // Fetch historical points for selected device
+      try {
+        const res = await fetch(`/api/history/${currentDevice}`);
+        const history = await res.json();
 
-      // New marker banayein with click event
-      marker = new google.maps.Marker({
-        position: { lat: gps.lat, lng: gps.lng },
-        map: map,
-        title: "Vehicle Location",
-        icon: {
-          url: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="red" stroke="white" stroke-width="2"/></svg>',
-          scaledSize: new google.maps.Size(20, 20),
-          anchor: new google.maps.Point(10, 10)
+        if (history.length > 0) {
+          pathCoordinates = history.map(d => ({
+            lat: Number(d.latitude),
+            lng: Number(d.longitude)
+          }));
+        } else {
+          pathCoordinates = [{ lat: gps.lat, lng: gps.lng }];
         }
-      });
 
-//     marker = new google.maps.Marker({
-//   position: { lat: gps.lat, lng: gps.lng },
-//   map: map,
-//   title: "Vehicle Location",
-//   icon: {
-//     url: "http://maps.google.com/mapfiles/kml/shapes/cabs.png", 
-//     scaledSize: new google.maps.Size(40, 40) // size adjust
-//   }
-// });
+        // Polyline
+        if (pathPolyline) pathPolyline.setMap(null);
+        pathPolyline = new google.maps.Polyline({
+          path: pathCoordinates,
+          geodesic: true,
+          strokeColor: "#007bff",
+          strokeOpacity: 1.0,
+          strokeWeight: 4,
+          map: map
+        });
 
+        // Marker on latest position
+        const lastPoint = pathCoordinates[pathCoordinates.length - 1];
+        if (marker) marker.setMap(null);
+        marker = new google.maps.Marker({
+          position: lastPoint,
+          map: map,
+          title: "Vehicle Location",
+          icon: {
+            url: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="red" stroke="white" stroke-width="2"/></svg>',
+            scaledSize: new google.maps.Size(20, 20),
+            anchor: new google.maps.Point(10, 10)
+          }
+        });
 
-      // Marker click pe info show karo
-      marker.addListener('click', function() {
-        const content = `
-          <div class="info-window">
-            <strong>📍 Vehicle Location</strong><br>
-            Device: ${currentDevice}<br>
-            Lat: ${marker.getPosition().lat().toFixed(6)}<br>
-            Lng: ${marker.getPosition().lng().toFixed(6)}<br>
-            Last Update: ${new Date().toLocaleTimeString()}
-          </div>
-        `;
-        infoWindow.setContent(content);
-        infoWindow.open(map, marker);
-      });
+        marker.addListener('click', () => {
+          const content = `
+            <div class="info-window">
+              <strong>📍 Vehicle Location</strong><br>
+              Device: ${currentDevice}<br>
+              Lat: ${marker.getPosition().lat().toFixed(6)}<br>
+              Lng: ${marker.getPosition().lng().toFixed(6)}<br>
+              Last Update: ${new Date().toLocaleTimeString()}
+            </div>`;
+          infoWindow.setContent(content);
+          infoWindow.open(map, marker);
+        });
 
-      startLiveTracking();
+        updateDeviceInfo();
+        startLiveTracking();
+      } catch (err) {
+        console.error("Error loading history:", err);
+      }
     }
 
     function changeDevice() {
       const selector = document.getElementById('deviceSelector');
       currentDevice = selector.value;
-      
-      // Reset tracking for new device
+
       pathCoordinates = [];
-      lastPosition = null;
       isAnimating = false;
-      
-      // Fetch new device data
-      fetch(`/api/latest?device_mac=${currentDevice}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.latitude && data.longitude) {
-            gps = { 
-              lat: data.latitude, 
-              lng: data.longitude,
-              device_mac: currentDevice
-            };
-            initializeTracking();
-            updateDeviceInfo();
-          }
-        })
-        .catch(err => console.error("Error changing device:", err));
+
+      initializeTracking();
     }
 
     function startLiveTracking() {
@@ -198,169 +170,70 @@
       setInterval(fetchLatestLocation, 3000);
     }
 
-    function fetchLatestLocation() {
+    async function fetchLatestLocation() {
       if (!currentDevice) return;
-      
-      fetch(`/api/latest?device_mac=${currentDevice}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.latitude !== undefined && data.longitude !== undefined) {
-            const newPosition = { 
-              lat: Number(data.latitude), 
-              lng: Number(data.longitude) 
-            };
-            updateVehiclePosition(newPosition, data);
-          }
-        })
-        .catch(err => console.error("Error:", err));
+
+      try {
+        const res = await fetch(`/api/latest?device_mac=${currentDevice}`);
+        const data = await res.json();
+        if (data.latitude !== undefined && data.longitude !== undefined) {
+          const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
+          updateVehiclePosition(newPosition, data);
+        }
+      } catch (err) {
+        console.error("Error fetching latest:", err);
+      }
     }
 
     function updateVehiclePosition(newPosition, data) {
-    // Last position se compare karo
-    const lastPosition = pathCoordinates[pathCoordinates.length - 1];
-    
-    // Distance calculate karo (meters mein)
-    const distance = calculateDistance(lastPosition, newPosition);
-    
-    // Minimum distance threshold - 10 meters
-    const MIN_DISTANCE_THRESHOLD = 1;
-    
-    if (distance < MIN_DISTANCE_THRESHOLD) {
-        // Agar movement 10m se kam hai, to sirf marker update karo, line nahi
-        marker.setPosition(newPosition);
-        if (autoCenter) map.panTo(newPosition);
-        
-        // Device info update karo
-        updateDeviceInfo(data);
-        return; // Line banaye bina return karo
-    }
-    
-    // Significant movement hai to normal processing karo
-    if (smoothMovement && lastPosition) {
-        createCurvedPath(lastPosition, newPosition);
-    } else {
+      const lastPos = pathCoordinates[pathCoordinates.length - 1];
+
+      if (!lastPos || lastPos.lat !== newPosition.lat || lastPos.lng !== newPosition.lng) {
         pathCoordinates.push(newPosition);
         pathPolyline.setPath(pathCoordinates);
-        marker.setPosition(newPosition);
-    }
-
-    if (autoCenter) map.panTo(newPosition);
-    updateDeviceInfo(data);
-}
-
-// Distance calculation function add karo
-function calculateDistance(pos1, pos2) {
-    const R = 6371e3; // Earth radius in meters
-    const φ1 = pos1.lat * Math.PI / 180;
-    const φ2 = pos2.lat * Math.PI / 180;
-    const Δφ = (pos2.lat - pos1.lat) * Math.PI / 180;
-    const Δλ = (pos2.lng - pos1.lng) * Math.PI / 180;
-
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return R * c; // Distance in meters
-}
-    // Smooth movement functions - IMPROVED
-    function createCurvedPath(startPos, endPos) {
-      if (isAnimating) return; // Animation already chal rahi hai to return
-      
-      const controlPoint = calculateControlPoint(startPos, endPos);
-      const curvedPoints = [];
-      
-      // Sirf 5 intermediate points for smoothness
-      for (let t = 0; t <= 1; t += 0.2) {
-        const point = calculateBezierPoint(startPos, controlPoint, endPos, t);
-        curvedPoints.push(point);
       }
-      
-      // Last point ensure karo ki exact end position pe pahuche
-      curvedPoints.push(endPos);
-      
-      // Animation start karo
-      animateMarkerAlongCurve(curvedPoints);
-      
-      // Polyline ko update karo
-      pathCoordinates.push(...curvedPoints);
-      pathPolyline.setPath(pathCoordinates);
-    }
 
-    function calculateControlPoint(start, end) {
-      const midLat = (start.lat + end.lat) / 2;
-      const midLng = (start.lng + end.lng) / 2;
-      const distance = calculateDistance(start, end);
-      const curveFactor = Math.min(distance * 0.000001, 0.0001); // Dynamic curve factor
-      
-      return {
-        lat: midLat + (Math.random() - 0.5) * curveFactor,
-        lng: midLng + (Math.random() - 0.5) * curveFactor
-      };
-    }
-
-    function calculateBezierPoint(p0, p1, p2, t) {
-      const x = Math.pow(1 - t, 2) * p0.lat + 2 * (1 - t) * t * p1.lat + Math.pow(t, 2) * p2.lat;
-      const y = Math.pow(1 - t, 2) * p0.lng + 2 * (1 - t) * t * p1.lng + Math.pow(t, 2) * p2.lng;
-      return { lat: x, lng: y };
-    }
-
-    function animateMarkerAlongCurve(points) {
-      isAnimating = true;
-      let currentIndex = 0;
-      
-      const animationInterval = setInterval(() => {
-        if (currentIndex >= points.length) {
-          clearInterval(animationInterval);
-          isAnimating = false;
-          // Final position ensure karo
-          marker.setPosition(points[points.length - 1]);
-          return;
-        }
-        marker.setPosition(points[currentIndex]);
-        currentIndex++;
-      }, 100); // Slower animation for better visibility
+      marker.setPosition(newPosition);
+      if (autoCenter) map.panTo(newPosition);
+      updateDeviceInfo(data);
     }
 
     function updateDeviceInfo(data = null) {
-      const deviceName = document.getElementById('deviceSelector').options[document.getElementById('deviceSelector').selectedIndex].text;
+      const selector = document.getElementById('deviceSelector');
+      const deviceName = selector.options[selector.selectedIndex].text;
       let info = `Device: ${deviceName} | MAC: ${currentDevice}`;
-      
       if (data) {
         if (data.speed) info += ` | Speed: ${data.speed} km/h`;
         if (data.direction) info += ` | Direction: ${data.direction}°`;
       }
-      
       document.getElementById('currentDevice').textContent = info;
-      document.getElementById('lastUpdate').textContent = 
+      document.getElementById('lastUpdate').textContent =
         `Last update: ${new Date().toLocaleTimeString()} | Points: ${pathCoordinates.length}`;
     }
 
     function toggleSmoothMovement() {
       smoothMovement = !smoothMovement;
-      const button = document.querySelector('.smooth-controls');
-      button.textContent = `🎯 Smooth Movement: ${smoothMovement ? 'ON' : 'OFF'}`;
-      button.style.background = smoothMovement ? '#28a745' : '#dc3545';
+      const btn = document.querySelector('.smooth-controls');
+      btn.textContent = `🎯 Smooth Movement: ${smoothMovement ? 'ON' : 'OFF'}`;
+      btn.style.background = smoothMovement ? '#28a745' : '#dc3545';
     }
 
     function toggleAutoCenter() {
       autoCenter = !autoCenter;
-      const button = document.querySelector('button[onclick="toggleAutoCenter()"]');
-      button.textContent = `🎯 Auto-Center: ${autoCenter ? 'ON' : 'OFF'}`;
+      const btn = document.querySelector('button[onclick="toggleAutoCenter()"]');
+      btn.textContent = `🎯 Auto-Center: ${autoCenter ? 'ON' : 'OFF'}`;
     }
 
     function clearPath() {
-      const currentPos = pathCoordinates[pathCoordinates.length - 1];
-      pathCoordinates = currentPos ? [currentPos] : [];
+      const lastPos = pathCoordinates[pathCoordinates.length - 1];
+      pathCoordinates = lastPos ? [lastPos] : [];
       pathPolyline.setPath(pathCoordinates);
-      lastPosition = currentPos || null;
       updateDeviceInfo();
     }
   </script>
 
   <script async defer
-  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
-</script>
-
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
+  </script>
 </body>
 </html>
