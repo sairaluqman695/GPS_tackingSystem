@@ -1164,10 +1164,8 @@
 // });
 
 
+//postgress
 
-
-
-// PostgreSQL + Express setup
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
@@ -1185,11 +1183,9 @@ const pool = new Pool({
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// Body parser middleware
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 
-// CORS middleware
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
@@ -1201,57 +1197,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// Test PostgreSQL connection
+// Test DB
 app.get("/api/testdb", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
     res.json({ message: "✅ Connected to PostgreSQL!", serverTime: result.rows[0].now });
   } catch (err) {
-    console.error("DB Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Homepage - Device selection & latest location
-app.get("/", async (req, res) => {
-  try {
-    const devicesResult = await pool.query(
-      `SELECT device_mac, device_name, vehicle_number FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
-    );
-
-    const devices = devicesResult.rows;
-    let gpsData = null;
-    const defaultDevice = devices.length > 0 ? devices[0].device_mac : null;
-
-    if (defaultDevice) {
-      const gpsResult = await pool.query(
-        `SELECT latitude, longitude, log_date FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
-        [defaultDevice]
-      );
-
-      if (gpsResult.rows.length > 0) {
-        const { latitude, longitude, log_date } = gpsResult.rows[0];
-        gpsData = { latitude, longitude, log_date, device_mac: defaultDevice };
-      }
-    }
-
-    res.render("map", { gpsData, devices, selectedDevice: defaultDevice });
-  } catch (err) {
-    console.error("DB Error:", err);
-    res.status(500).send("Error loading map");
-  }
-});
-
-// Insert GPS data + auto-register device if new
+// Insert GPS + auto-register device
 app.post("/api/gps", async (req, res) => {
   const { latitude, longitude, device_mac, speed, direction } = req.body;
-
-  if (!latitude || !longitude || !device_mac)
-    return res.status(400).json({ error: "Latitude, Longitude & Device MAC required" });
+  if (!latitude || !longitude || !device_mac) return res.status(400).json({ error: "Latitude, Longitude & Device MAC required" });
 
   try {
+    // Check device
     const deviceCheck = await pool.query(`SELECT device_id FROM gps_devices WHERE device_mac=$1`, [device_mac]);
-
     if (deviceCheck.rows.length === 0) {
       await pool.query(
         `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
@@ -1274,49 +1237,49 @@ app.post("/api/gps", async (req, res) => {
   }
 });
 
-// Latest location API
+// Get latest location
 app.get("/api/latest", async (req, res) => {
   const { device_mac } = req.query;
   if (!device_mac) return res.status(400).json({ error: "Device MAC required" });
 
   try {
     const result = await pool.query(
-      `SELECT latitude, longitude, log_date, speed, direction FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
+      `SELECT latitude, longitude, log_date, speed, direction
+       FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
       [device_mac]
     );
 
-    res.json(result.rows.length > 0 ? result.rows[0] : { message: "No data found for this device" });
+    res.json(result.rows.length > 0 ? result.rows[0] : { message: "No data found" });
   } catch (err) {
-    console.error("DB Fetch Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// List all active devices
-app.get("/api/devices", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT device_mac, device_name, vehicle_number, driver_name FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("DB Error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Device History
+// Device history
 app.get("/api/history/:device_mac", async (req, res) => {
   const { device_mac } = req.params;
 
   try {
     const result = await pool.query(
-      `SELECT latitude, longitude, log_date, speed, direction FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC`,
+      `SELECT latitude, longitude, log_date, speed, direction
+       FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC`,
       [device_mac]
     );
     res.json(result.rows);
   } catch (err) {
-    console.error("DB Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List devices
+app.get("/api/devices", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT device_mac, device_name, vehicle_number, driver_name 
+       FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
+    );
+    res.json(result.rows);
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
