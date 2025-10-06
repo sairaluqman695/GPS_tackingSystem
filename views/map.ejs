@@ -682,6 +682,9 @@
 </html> -->
 
 
+
+
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -795,6 +798,7 @@
           <button onclick="clearPath()">🗑️ Clear Path</button>
         </div>
 
+        <div id="status" class="muted">Status: Unknown</div>
         <div id="lastUpdate" class="muted">Last update: Loading...</div>
       </div>
 
@@ -831,6 +835,10 @@
     let pathCoordinates = [];
     let autoCenter = true;
     let currentDevice = gps.device_mac;
+
+    // 🟢 Added for control and state
+    let liveInterval = null;
+    let isDeviceConnected = false;
 
     function initMap() {
       map = new google.maps.Map(document.getElementById("map"), {
@@ -896,38 +904,57 @@
       const selector = document.getElementById('deviceSelector');
       currentDevice = selector.value;
       pathCoordinates = [];
+      if (liveInterval) clearInterval(liveInterval); // stop old interval
       initializeTracking();
     }
 
+    // 🟢 Updated to manage interval safely
     function startLiveTracking() {
+      if (liveInterval) clearInterval(liveInterval);
       fetchLatestLocation();
-      setInterval(fetchLatestLocation, 3000);
+      liveInterval = setInterval(fetchLatestLocation, 3000);
     }
 
+    // 🟢 Updated to handle disconnection, duplicates, and connection state
     async function fetchLatestLocation() {
       if (!currentDevice) return;
       try {
         const res = await fetch(`/api/latest?device_mac=${currentDevice}`);
         const data = await res.json();
-        if (data.latitude !== undefined && data.longitude !== undefined) {
-          const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
-          smoothMove(marker, pathCoordinates[pathCoordinates.length - 1], newPosition, 800);
-          pathCoordinates.push(newPosition);
-          pathPolyline.setPath(pathCoordinates);
-          if (autoCenter) map.panTo(newPosition);
-          updateDeviceInfo(data);
+
+        // No valid data
+        if (!data || isNaN(data.latitude) || isNaN(data.longitude)) {
+          console.log("No valid data for device:", currentDevice);
+          isDeviceConnected = false;
+          updateDeviceInfo();
+          return;
         }
-      } catch (err) { console.error("Error:", err); }
+
+        isDeviceConnected = true;
+        const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
+        const last = pathCoordinates[pathCoordinates.length - 1];
+
+        // same point again? skip
+        if (last && last.lat === newPosition.lat && last.lng === newPosition.lng) return;
+
+        smoothMove(marker, last, newPosition, 800);
+        pathCoordinates.push(newPosition);
+        pathPolyline.setPath(pathCoordinates);
+        if (autoCenter) map.panTo(newPosition);
+        updateDeviceInfo(data);
+      } catch (err) {
+        console.error("Error fetching latest:", err);
+        isDeviceConnected = false;
+        updateDeviceInfo();
+      }
     }
 
-    // smooth transition between positions
     function smoothMove(marker, from, to, duration) {
       if (!from || !to) return;
       const frames = 60;
       const deltaLat = (to.lat - from.lat) / frames;
       const deltaLng = (to.lng - from.lng) / frames;
       let i = 0;
-
       const move = setInterval(() => {
         i++;
         const newLat = from.lat + deltaLat * i;
@@ -937,6 +964,7 @@
       }, duration / frames);
     }
 
+    // 🟢 Updated to show connection status + prevent incorrect point counts
     function updateDeviceInfo(data = null) {
       const selector = document.getElementById('deviceSelector');
       const deviceName = selector ? selector.options[selector.selectedIndex].text : "";
@@ -949,6 +977,8 @@
       infoEl.textContent = info;
       document.getElementById('lastUpdate').textContent =
         `Last update: ${new Date().toLocaleTimeString()} | Points: ${pathCoordinates.length}`;
+      document.getElementById('status').textContent =
+        isDeviceConnected ? "🟢 Connected" : "🔴 Disconnected";
     }
 
     function toggleAutoCenter() {
