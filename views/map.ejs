@@ -243,9 +243,9 @@
 
 
 
+<!-- //without smooth movement -->
 
-
-
+<!-- 
 <!DOCTYPE html>
 <html>
 
@@ -670,9 +670,171 @@
 
   </script>
 
-  <script async defer
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
-    </script>
+<script
+  src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap"
+  async
+  defer>
+</script>
+
+
 </body>
 
+</html> -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GPS Tracking Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    #map {
+      height: 90vh;
+      width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f9fa;
+      text-align: center;
+    }
+    h2 {
+      margin-top: 20px;
+      color: #333;
+    }
+    .info {
+      background: #fff;
+      border-radius: 10px;
+      padding: 10px;
+      margin: 10px auto;
+      width: 60%;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+
+  <h2>📍 Real-Time GPS Tracker</h2>
+  <div id="map"></div>
+
+  <div class="info" id="info-box">
+    <strong>Device:</strong> <span id="deviceMac">N/A</span> <br>
+    <strong>Lat:</strong> <span id="lat">--</span> |
+    <strong>Lng:</strong> <span id="lng">--</span> <br>
+    <a id="googleLink" href="#" target="_blank">View on Google Maps</a>
+  </div>
+
+  <script id="gps-data" type="application/json">
+    <%- JSON.stringify(
+      gpsData && gpsData.latitude && gpsData.longitude
+        ? { lat: Number(gpsData.latitude), lng: Number(gpsData.longitude), device_mac: gpsData.device_mac }
+        : { lat: 31.5204, lng: 74.3587, device_mac: '' } // Default Lahore
+    ) %>
+  </script>
+
+  <script>
+    let map, marker, path, lastPos = null;
+
+    function initMap() {
+      const gps = JSON.parse(document.getElementById("gps-data").textContent);
+
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 14,
+        center: gps,
+      });
+
+      marker = new google.maps.Marker({
+        position: gps,
+        map,
+        title: gps.device_mac || "Device",
+        icon: {
+          url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+        }
+      });
+
+      path = new google.maps.Polyline({
+        path: [gps],
+        geodesic: true,
+        strokeColor: "#007bff",
+        strokeOpacity: 1.0,
+        strokeWeight: 3,
+        map,
+      });
+
+      lastPos = gps;
+      updateInfo(gps);
+
+      // Poll server every 5 sec for latest position
+      setInterval(fetchLatestData, 5000);
+    }
+
+    async function fetchLatestData() {
+      try {
+        const res = await fetch("/api/latest");
+        const data = await res.json();
+
+        if (!data.latitude || !data.longitude) return;
+
+        const newPos = {
+          lat: Number(data.latitude),
+          lng: Number(data.longitude),
+        };
+
+        smoothMove(marker, lastPos, newPos, 1000); // smooth 1 second transition
+        path.getPath().push(newPos);
+        map.panTo(newPos);
+        updateInfo({ ...newPos, device_mac: data.device_mac });
+
+        lastPos = newPos;
+      } catch (err) {
+        console.error("Fetch error:", err);
+      }
+    }
+
+    // Smooth animation between two positions
+    function smoothMove(marker, from, to, duration) {
+      const frames = 60;
+      const deltaLat = (to.lat - from.lat) / frames;
+      const deltaLng = (to.lng - from.lng) / frames;
+      let i = 0;
+
+      const move = setInterval(() => {
+        i++;
+        const newLat = from.lat + deltaLat * i;
+        const newLng = from.lng + deltaLng * i;
+        marker.setPosition({ lat: newLat, lng: newLng });
+
+        if (i >= frames) clearInterval(move);
+      }, duration / frames);
+    }
+
+    function updateInfo(pos) {
+      document.getElementById("deviceMac").textContent = pos.device_mac || "Unknown";
+      document.getElementById("lat").textContent = pos.lat.toFixed(5);
+      document.getElementById("lng").textContent = pos.lng.toFixed(5);
+      document.getElementById("googleLink").href = `https://www.google.com/maps?q=${pos.lat},${pos.lng}`;
+    }
+  </script>
+
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap"
+    async
+    defer>
+  </script>
+</body>
 </html>
