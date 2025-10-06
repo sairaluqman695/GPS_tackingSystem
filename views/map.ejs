@@ -244,8 +244,6 @@
 
 
 
-
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -325,7 +323,6 @@
   </script>
 
   <script>
-    // map + tracking code (similar to prior working version)
     let gps = JSON.parse(document.getElementById('gps-data').textContent);
     let map, marker, pathPolyline, infoWindow;
     let pathCoordinates = [];
@@ -340,8 +337,8 @@
       });
       infoWindow = new google.maps.InfoWindow({ content: "Loading..." });
       initializeTracking();
-      fetchPending(); // load pending on page open
-      setInterval(fetchPending, 10000); // poll pending every 10s
+      fetchPending();
+      setInterval(fetchPending, 10000);
     }
 
     async function initializeTracking() {
@@ -350,8 +347,10 @@
         const res = await fetch(`/api/history/${currentDevice}`);
         const history = await res.json();
 
+        // Only last known point when not watching live
         if (history.length > 0) {
-          pathCoordinates = history.map(d => ({ lat: Number(d.latitude), lng: Number(d.longitude) }));
+          const last = history[history.length - 1];
+          pathCoordinates = [{ lat: Number(last.latitude), lng: Number(last.longitude) }];
         } else {
           pathCoordinates = [{ lat: gps.lat, lng: gps.lng }];
         }
@@ -369,6 +368,37 @@
         const lastPoint = pathCoordinates[pathCoordinates.length - 1];
         if (marker) marker.setMap(null);
         marker = new google.maps.Marker({ position: lastPoint, map, title: "Vehicle Location" });
+
+        // ✅ Info when clicking marker
+        marker.addListener("click", () => {
+          const content = `
+            <div style="font-size:14px; line-height:1.5;">
+              <strong>${deviceNameFromSelector()}</strong><br>
+              📍 <b>Lat:</b> ${lastPoint.lat.toFixed(6)}<br>
+              📍 <b>Lng:</b> ${lastPoint.lng.toFixed(6)}<br>
+              <a href="https://www.google.com/maps?q=${lastPoint.lat},${lastPoint.lng}" target="_blank">
+                🌍 View on Google Maps
+              </a>
+            </div>`;
+          infoWindow.setContent(content);
+          infoWindow.open(map, marker);
+        });
+
+        // ✅ Info when clicking any point on the blue path
+        pathPolyline.addListener("click", (e) => {
+          const content = `
+            <div style="font-size:14px; line-height:1.5;">
+              <strong>${deviceNameFromSelector()}</strong><br>
+              📍 <b>Lat:</b> ${e.latLng.lat().toFixed(6)}<br>
+              📍 <b>Lng:</b> ${e.latLng.lng().toFixed(6)}<br>
+              <a href="https://www.google.com/maps?q=${e.latLng.lat()},${e.latLng.lng()}" target="_blank">
+                🌍 View on Google Maps
+              </a>
+            </div>`;
+          infoWindow.setContent(content);
+          infoWindow.setPosition(e.latLng);
+          infoWindow.open(map);
+        });
 
         updateDeviceInfo();
         startLiveTracking();
@@ -438,7 +468,6 @@
       updateDeviceInfo();
     }
 
-    /* ===================== Pending devices UI ===================== */
     async function fetchPending() {
       try {
         const res = await fetch('/api/pending');
@@ -464,13 +493,11 @@
         left.innerHTML = `<strong>${item.device_mac}</strong><div class="muted">seen: ${new Date(item.first_seen).toLocaleString()} • last: ${new Date(item.last_seen).toLocaleString()} • count: ${item.seen_count}</div>`;
         const right = document.createElement('div');
 
-        // Approve button
         const approveBtn = document.createElement('button');
         approveBtn.textContent = "Approve";
         approveBtn.className = 'small';
         approveBtn.onclick = () => showApproveForm(item.device_mac, row);
 
-        // Reject button
         const rejectBtn = document.createElement('button');
         rejectBtn.textContent = "Reject 30m";
         rejectBtn.className = 'small';
@@ -481,14 +508,11 @@
 
         row.appendChild(left);
         row.appendChild(right);
-
         container.appendChild(row);
       });
     }
 
-    // Show inline approve form
     function showApproveForm(device_mac, containerRow) {
-      // prevent multiple forms
       if (containerRow.querySelector('.pending-form')) return;
 
       const form = document.createElement('div');
@@ -524,7 +548,6 @@
           });
           const json = await res.json();
           document.getElementById(`status_${device_mac}`).textContent = json.message || "Done";
-          // refresh list and devices list on page
           await fetchPending();
           await reloadDevicesList();
           form.remove();
@@ -554,7 +577,6 @@
       }
     }
 
-    // Reload devices dropdown after approve
     async function reloadDevicesList() {
       try {
         const res = await fetch('/api/devices');
@@ -567,17 +589,18 @@
           opt.textContent = `${d.device_name} - ${d.vehicle_number}`;
           sel.appendChild(opt);
         });
-        // keep currentDevice selected if still present
         sel.value = currentDevice;
       } catch (err) {
         console.error("Reload devices error:", err);
       }
     }
 
+    function deviceNameFromSelector() {
+      const selector = document.getElementById('deviceSelector');
+      return selector ? selector.options[selector.selectedIndex].text : '';
+    }
   </script>
 
-  <script async defer
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
-  </script>
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap"></script>
 </body>
 </html>
