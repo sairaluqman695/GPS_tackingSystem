@@ -1097,6 +1097,7 @@
 
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>Multi Device GPS Tracker</title>
   <style>
@@ -1186,6 +1187,7 @@
     }
   </style>
 </head>
+
 <body>
   <h2>🚗 Multi Device GPS Tracking</h2>
 
@@ -1194,11 +1196,11 @@
       <div class="panel">
         <label><strong>📱 Select Device:</strong></label>
         <select class="device-selector" id="deviceSelector" onchange="changeDevice()">
-          <% devices.forEach(device => { %>
-            <option value="<%= device.device_mac %>" <%= selectedDevice === device.device_mac ? 'selected' : '' %>>
+          <% devices.forEach(device=> { %>
+            <option value="<%= device.device_mac %>" <%=selectedDevice===device.device_mac ? 'selected' : '' %>>
               <%= device.device_name %> - <%= device.vehicle_number %>
             </option>
-          <% }); %>
+            <% }); %>
         </select>
 
         <div class="device-info" id="currentDevice">Device: Loading...</div>
@@ -1337,13 +1339,27 @@
         const res = await fetch(`/api/latest?device_mac=${currentDevice}`);
         const data = await res.json();
 
+        // --- improved connection logic ---
         if (!data || isNaN(data.latitude) || isNaN(data.longitude)) {
-          isDeviceConnected = false;
-          updateDeviceInfo();
+          console.log("No valid live data yet...");
+          return; // Don't mark anything yet
+        }
+
+        const newLat = Number(data.latitude);
+        const newLng = Number(data.longitude);
+        const lastPoint = pathCoordinates[pathCoordinates.length - 1];
+
+        // Check if new data is same as last DB point
+        if (newLat === lastPoint.lat && newLng === lastPoint.lng) {
+          document.getElementById("status").innerText = "🟡 Waiting for GPS data...";
           return;
         }
 
-        isDeviceConnected = true;
+        // If data changed → mark connected
+        document.getElementById("status").innerText = "🟢 Live tracking active";
+        pathCoordinates.push({ lat: newLat, lng: newLng });
+        updateMap();
+
         const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
         const last = pathCoordinates[pathCoordinates.length - 1];
 
@@ -1526,10 +1542,9 @@
   </script>
 
   <!-- ✅ Keep this LAST -->
-  <script
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap"
-    async
-    defer>
-  </script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap"
+    async defer>
+    </script>
 </body>
+
 </html>
