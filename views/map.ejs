@@ -681,10 +681,7 @@
 
 </html> -->
 
-
-
-
-
+<!-- 
 <!DOCTYPE html>
 <html>
 <head>
@@ -798,7 +795,6 @@
           <button onclick="clearPath()">🗑️ Clear Path</button>
         </div>
 
-        <div id="status" class="muted">Status: Unknown</div>
         <div id="lastUpdate" class="muted">Last update: Loading...</div>
       </div>
 
@@ -835,10 +831,6 @@
     let pathCoordinates = [];
     let autoCenter = true;
     let currentDevice = gps.device_mac;
-
-    // 🟢 Added for control and state
-    let liveInterval = null;
-    let isDeviceConnected = false;
 
     function initMap() {
       map = new google.maps.Map(document.getElementById("map"), {
@@ -904,57 +896,38 @@
       const selector = document.getElementById('deviceSelector');
       currentDevice = selector.value;
       pathCoordinates = [];
-      if (liveInterval) clearInterval(liveInterval); // stop old interval
       initializeTracking();
     }
 
-    // 🟢 Updated to manage interval safely
     function startLiveTracking() {
-      if (liveInterval) clearInterval(liveInterval);
       fetchLatestLocation();
-      liveInterval = setInterval(fetchLatestLocation, 3000);
+      setInterval(fetchLatestLocation, 3000);
     }
 
-    // 🟢 Updated to handle disconnection, duplicates, and connection state
     async function fetchLatestLocation() {
       if (!currentDevice) return;
       try {
         const res = await fetch(`/api/latest?device_mac=${currentDevice}`);
         const data = await res.json();
-
-        // No valid data
-        if (!data || isNaN(data.latitude) || isNaN(data.longitude)) {
-          console.log("No valid data for device:", currentDevice);
-          isDeviceConnected = false;
-          updateDeviceInfo();
-          return;
+        if (data.latitude !== undefined && data.longitude !== undefined) {
+          const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
+          smoothMove(marker, pathCoordinates[pathCoordinates.length - 1], newPosition, 800);
+          pathCoordinates.push(newPosition);
+          pathPolyline.setPath(pathCoordinates);
+          if (autoCenter) map.panTo(newPosition);
+          updateDeviceInfo(data);
         }
-
-        isDeviceConnected = true;
-        const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
-        const last = pathCoordinates[pathCoordinates.length - 1];
-
-        // same point again? skip
-        if (last && last.lat === newPosition.lat && last.lng === newPosition.lng) return;
-
-        smoothMove(marker, last, newPosition, 800);
-        pathCoordinates.push(newPosition);
-        pathPolyline.setPath(pathCoordinates);
-        if (autoCenter) map.panTo(newPosition);
-        updateDeviceInfo(data);
-      } catch (err) {
-        console.error("Error fetching latest:", err);
-        isDeviceConnected = false;
-        updateDeviceInfo();
-      }
+      } catch (err) { console.error("Error:", err); }
     }
 
+    // smooth transition between positions
     function smoothMove(marker, from, to, duration) {
       if (!from || !to) return;
       const frames = 60;
       const deltaLat = (to.lat - from.lat) / frames;
       const deltaLng = (to.lng - from.lng) / frames;
       let i = 0;
+
       const move = setInterval(() => {
         i++;
         const newLat = from.lat + deltaLat * i;
@@ -964,7 +937,6 @@
       }, duration / frames);
     }
 
-    // 🟢 Updated to show connection status + prevent incorrect point counts
     function updateDeviceInfo(data = null) {
       const selector = document.getElementById('deviceSelector');
       const deviceName = selector ? selector.options[selector.selectedIndex].text : "";
@@ -977,8 +949,6 @@
       infoEl.textContent = info;
       document.getElementById('lastUpdate').textContent =
         `Last update: ${new Date().toLocaleTimeString()} | Points: ${pathCoordinates.length}`;
-      document.getElementById('status').textContent =
-        isDeviceConnected ? "🟢 Connected" : "🔴 Disconnected";
     }
 
     function toggleAutoCenter() {
@@ -1115,7 +1085,448 @@
     }
   </script>
 
- <script
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap"
+    async
+    defer>
+  </script>
+</body>
+</html> -->
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Multi Device GPS Tracker</title>
+  <style>
+    #map {
+      height: 68vh;
+      width: 100%;
+    }
+
+    .container {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .left {
+      width: 70%;
+    }
+
+    .right {
+      width: 30%;
+    }
+
+    .panel {
+      background: #f8f9fa;
+      padding: 12px;
+      margin: 10px 0;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .device-selector {
+      width: 100%;
+      padding: 8px;
+      margin: 6px 0;
+      border-radius: 4px;
+    }
+
+    .device-info {
+      background: #007bff;
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 8px 0;
+    }
+
+    button {
+      padding: 8px 12px;
+      margin: 6px 6px 6px 0;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .small {
+      font-size: 0.9rem;
+      padding: 6px 8px;
+    }
+
+    .pending-item {
+      border-bottom: 1px solid #ddd;
+      padding: 8px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .pending-form {
+      margin-top: 8px;
+      background: #fff;
+      padding: 8px;
+      border-radius: 4px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 6px;
+      margin: 6px 0;
+      box-sizing: border-box;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <h2>🚗 Multi Device GPS Tracking</h2>
+
+  <div class="container">
+    <div class="left">
+      <div class="panel">
+        <label><strong>📱 Select Device:</strong></label>
+        <select class="device-selector" id="deviceSelector" onchange="changeDevice()">
+          <% devices.forEach(device => { %>
+            <option value="<%= device.device_mac %>" <%= selectedDevice === device.device_mac ? 'selected' : '' %>>
+              <%= device.device_name %> - <%= device.vehicle_number %>
+            </option>
+          <% }); %>
+        </select>
+
+        <div class="device-info" id="currentDevice">Device: Loading...</div>
+
+        <div style="margin-bottom:10px;">
+          <button onclick="toggleAutoCenter(event)">🎯 Auto-Center: ON</button>
+          <button onclick="clearPath()">🗑️ Clear Path</button>
+        </div>
+
+        <div id="status" class="muted">Status: Unknown</div>
+        <div id="lastUpdate" class="muted">Last update: Loading...</div>
+      </div>
+
+      <div id="map"></div>
+    </div>
+
+    <div class="right">
+      <div class="panel">
+        <h3>Pending Devices</h3>
+        <div id="pendingList" class="muted">Loading pending devices...</div>
+      </div>
+
+      <div class="panel">
+        <h4>Quick Actions</h4>
+        <div class="muted">You will be prompted to approve or reject newly detected devices here.</div>
+        <div style="margin-top:8px;">
+          <button onclick="fetchPending()">Refresh Pending Now</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ FIXED: Safe default JSON if gpsData missing -->
+  <script id="gps-data" type="application/json">
+    <% if (typeof gpsData !== "undefined" && gpsData && !isNaN(gpsData.latitude) && !isNaN(gpsData.longitude)) { %>
+      {"lat": <%= gpsData.latitude %>, "lng": <%= gpsData.longitude %>, "device_mac": "<%= gpsData.device_mac %>"}
+    <% } else { %>
+      {"lat": 32.447811, "lng": 74.495567, "device_mac": ""}
+    <% } %>
+  </script>
+
+  <script>
+    // ✅ Safe parse to avoid crash if invalid JSON
+    let gps = {};
+    try {
+      gps = JSON.parse(document.getElementById('gps-data').textContent.trim());
+    } catch (e) {
+      gps = { lat: 32.447811, lng: 74.495567, device_mac: "" };
+    }
+
+    let map, marker, pathPolyline, infoWindow;
+    let pathCoordinates = [];
+    let autoCenter = true;
+    let currentDevice = gps.device_mac;
+    let liveInterval = null;
+    let isDeviceConnected = false;
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 16,
+        center: { lat: gps.lat, lng: gps.lng },
+        mapTypeId: 'roadmap'
+      });
+
+      infoWindow = new google.maps.InfoWindow({ content: "Loading..." });
+      initializeTracking();
+      fetchPending();
+      setInterval(fetchPending, 10000);
+    }
+
+    async function initializeTracking() {
+      try {
+        if (!currentDevice) return;
+        const res = await fetch(`/api/history/${currentDevice}`);
+        const history = await res.json();
+
+        if (history.length > 0) {
+          const last = history[history.length - 1];
+          pathCoordinates = [{ lat: Number(last.latitude), lng: Number(last.longitude) }];
+        } else {
+          pathCoordinates = [{ lat: gps.lat, lng: gps.lng }];
+        }
+
+        if (pathPolyline) pathPolyline.setMap(null);
+        pathPolyline = new google.maps.Polyline({
+          path: pathCoordinates,
+          geodesic: true,
+          strokeColor: "#007bff",
+          strokeOpacity: 1.0,
+          strokeWeight: 4,
+          map: map
+        });
+
+        const lastPoint = pathCoordinates[pathCoordinates.length - 1];
+        if (marker) marker.setMap(null);
+        marker = new google.maps.Marker({ position: lastPoint, map, title: "Vehicle Location" });
+
+        marker.addListener("click", () => {
+          const content = `
+            <div style="font-size:14px; line-height:1.5;">
+              <strong>${deviceNameFromSelector()}</strong><br>
+              📍 <b>Lat:</b> ${lastPoint.lat.toFixed(6)}<br>
+              📍 <b>Lng:</b> ${lastPoint.lng.toFixed(6)}<br>
+              <a href="https://www.google.com/maps?q=${lastPoint.lat},${lastPoint.lng}" target="_blank">
+                🌍 View on Google Maps
+              </a>
+            </div>`;
+          infoWindow.setContent(content);
+          infoWindow.open(map, marker);
+        });
+
+        updateDeviceInfo();
+        startLiveTracking();
+      } catch (err) {
+        console.error("Error loading history:", err);
+      }
+    }
+
+    function changeDevice() {
+      const selector = document.getElementById('deviceSelector');
+      currentDevice = selector.value;
+      pathCoordinates = [];
+      if (liveInterval) clearInterval(liveInterval);
+      initializeTracking();
+    }
+
+    function startLiveTracking() {
+      if (liveInterval) clearInterval(liveInterval);
+      fetchLatestLocation();
+      liveInterval = setInterval(fetchLatestLocation, 3000);
+    }
+
+    async function fetchLatestLocation() {
+      if (!currentDevice) return;
+      try {
+        const res = await fetch(`/api/latest?device_mac=${currentDevice}`);
+        const data = await res.json();
+
+        if (!data || isNaN(data.latitude) || isNaN(data.longitude)) {
+          isDeviceConnected = false;
+          updateDeviceInfo();
+          return;
+        }
+
+        isDeviceConnected = true;
+        const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
+        const last = pathCoordinates[pathCoordinates.length - 1];
+
+        if (last && last.lat === newPosition.lat && last.lng === newPosition.lng) return;
+
+        smoothMove(marker, last, newPosition, 800);
+        pathCoordinates.push(newPosition);
+        pathPolyline.setPath(pathCoordinates);
+        if (autoCenter) map.panTo(newPosition);
+        updateDeviceInfo(data);
+      } catch (err) {
+        console.error("Error fetching latest:", err);
+        isDeviceConnected = false;
+        updateDeviceInfo();
+      }
+    }
+
+    function smoothMove(marker, from, to, duration) {
+      if (!from || !to) return;
+      const frames = 60;
+      const deltaLat = (to.lat - from.lat) / frames;
+      const deltaLng = (to.lng - from.lng) / frames;
+      let i = 0;
+      const move = setInterval(() => {
+        i++;
+        const newLat = from.lat + deltaLat * i;
+        const newLng = from.lng + deltaLng * i;
+        marker.setPosition({ lat: newLat, lng: newLng });
+        if (i >= frames) clearInterval(move);
+      }, duration / frames);
+    }
+
+    function updateDeviceInfo(data = null) {
+      const selector = document.getElementById('deviceSelector');
+      const deviceName = selector ? selector.options[selector.selectedIndex].text : "";
+      const infoEl = document.getElementById('currentDevice');
+      let info = `Device: ${deviceName} | MAC: ${currentDevice}`;
+      if (data) {
+        if (data.speed) info += ` | Speed: ${data.speed} km/h`;
+        if (data.direction) info += ` | Direction: ${data.direction}°`;
+      }
+      infoEl.textContent = info;
+      document.getElementById('lastUpdate').textContent =
+        `Last update: ${new Date().toLocaleTimeString()} | Points: ${pathCoordinates.length}`;
+      document.getElementById('status').textContent =
+        isDeviceConnected ? "🟢 Connected" : "🔴 Disconnected";
+    }
+
+    function toggleAutoCenter(event) {
+      autoCenter = !autoCenter;
+      event.target.textContent = `🎯 Auto-Center: ${autoCenter ? 'ON' : 'OFF'}`;
+    }
+
+    function clearPath() {
+      const lastPos = pathCoordinates[pathCoordinates.length - 1];
+      pathCoordinates = lastPos ? [lastPos] : [];
+      pathPolyline.setPath(pathCoordinates);
+      updateDeviceInfo();
+    }
+
+    async function fetchPending() {
+      try {
+        const res = await fetch('/api/pending');
+        const list = await res.json();
+        renderPendingList(list);
+      } catch (err) { console.error("Pending fetch error:", err); }
+    }
+
+    function renderPendingList(list) {
+      const container = document.getElementById('pendingList');
+      if (!list || list.length === 0) {
+        container.innerHTML = "<div class='muted'>No pending devices</div>";
+        return;
+      }
+      container.innerHTML = '';
+      list.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'pending-item';
+        const left = document.createElement('div');
+        left.innerHTML = `<strong>${item.device_mac}</strong><div class="muted">seen: ${new Date(item.first_seen).toLocaleString()} • last: ${new Date(item.last_seen).toLocaleString()} • count: ${item.seen_count}</div>`;
+        const right = document.createElement('div');
+        const approveBtn = document.createElement('button');
+        approveBtn.textContent = "Approve";
+        approveBtn.className = 'small';
+        approveBtn.onclick = () => showApproveForm(item.device_mac, row);
+        const rejectBtn = document.createElement('button');
+        rejectBtn.textContent = "Reject 30m";
+        rejectBtn.className = 'small';
+        rejectBtn.onclick = () => rejectPending(item.device_mac, 30, rejectBtn);
+        right.appendChild(approveBtn);
+        right.appendChild(rejectBtn);
+        row.appendChild(left);
+        row.appendChild(right);
+        container.appendChild(row);
+      });
+    }
+
+    function showApproveForm(device_mac, containerRow) {
+      if (containerRow.querySelector('.pending-form')) return;
+      const form = document.createElement('div');
+      form.className = 'pending-form';
+      form.innerHTML = `
+        <label>Device MAC: <strong>${device_mac}</strong></label>
+        <input type="text" placeholder="Device name" id="name_${device_mac}">
+        <input type="text" placeholder="Vehicle number" id="vehicle_${device_mac}">
+        <input type="text" placeholder="Driver name" id="driver_${device_mac}">
+        <div style="margin-top:6px;">
+          <button id="approve_${device_mac}">Save & Approve</button>
+          <button id="cancel_${device_mac}">Cancel</button>
+        </div>
+        <div id="status_${device_mac}" class="muted" style="margin-top:6px;"></div>`;
+      containerRow.appendChild(form);
+      document.getElementById(`cancel_${device_mac}`).onclick = () => form.remove();
+      document.getElementById(`approve_${device_mac}`).onclick = async () => {
+        const btn = document.getElementById(`approve_${device_mac}`);
+        btn.disabled = true;
+        const name = document.getElementById(`name_${device_mac}`).value.trim();
+        const vehicle = document.getElementById(`vehicle_${device_mac}`).value.trim();
+        const driver = document.getElementById(`driver_${device_mac}`).value.trim();
+        document.getElementById(`status_${device_mac}`).textContent = "Saving...";
+        try {
+          const res = await fetch('/api/pending/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_mac, device_name: name, vehicle_number: vehicle, driver_name: driver })
+          });
+          const json = await res.json();
+          document.getElementById(`status_${device_mac}`).textContent = json.message || "Done";
+          await fetchPending();
+          await reloadDevicesList();
+          form.remove();
+        } catch (err) {
+          console.error("Approve error:", err);
+          document.getElementById(`status_${device_mac}`).textContent = "Error saving";
+          btn.disabled = false;
+        }
+      };
+    }
+
+    async function rejectPending(device_mac, minutes, btn) {
+      if (!confirm(`Reject device ${device_mac} for ${minutes} minutes?`)) return;
+      try {
+        btn.disabled = true;
+        const res = await fetch('/api/pending/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_mac, minutes })
+        });
+        const j = await res.json();
+        alert(j.message || 'Device rejected');
+        fetchPending();
+      } catch (err) {
+        console.error("Reject error:", err);
+        btn.disabled = false;
+      }
+    }
+
+    async function reloadDevicesList() {
+      try {
+        const res = await fetch('/api/devices');
+        const devices = await res.json();
+        const sel = document.getElementById('deviceSelector');
+        sel.innerHTML = '';
+        devices.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d.device_mac;
+          opt.textContent = `${d.device_name} - ${d.vehicle_number}`;
+          sel.appendChild(opt);
+        });
+        sel.value = currentDevice;
+      } catch (err) {
+        console.error("Reload devices error:", err);
+      }
+    }
+
+    function deviceNameFromSelector() {
+      const selector = document.getElementById('deviceSelector');
+      return selector ? selector.options[selector.selectedIndex].text : '';
+    }
+  </script>
+
+  <!-- ✅ Keep this LAST -->
+  <script
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap"
     async
     defer>
