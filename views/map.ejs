@@ -241,9 +241,6 @@
 
 
 
-
-
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -286,16 +283,16 @@
         </select>
 
         <div class="device-info" id="currentDevice">Device: Loading...</div>
-
+        
         <div style="margin-bottom:10px;">
-          <button onclick="toggleAutoCenter()">🎯 Auto-Center: ON</button>
+          <button id="autoCenterBtn" onclick="toggleAutoCenter()">🎯 Smooth Follow: ON</button>
           <button onclick="clearPath()">🗑️ Clear Path</button>
         </div>
 
         <div id="lastUpdate" class="muted">Last update: Loading...</div>
       </div>
 
-      <div id="map" style="height:68vh;"></div>
+      <div id="map" style="height:68vh; position:relative;"></div>
     </div>
 
     <div class="right">
@@ -347,7 +344,6 @@
         const res = await fetch(`/api/history/${currentDevice}`);
         const history = await res.json();
 
-        // Only last known point when not watching live
         if (history.length > 0) {
           const last = history[history.length - 1];
           pathCoordinates = [{ lat: Number(last.latitude), lng: Number(last.longitude) }];
@@ -369,7 +365,6 @@
         if (marker) marker.setMap(null);
         marker = new google.maps.Marker({ position: lastPoint, map, title: "Vehicle Location" });
 
-        // ✅ Info when clicking marker
         marker.addListener("click", () => {
           const content = `
             <div style="font-size:14px; line-height:1.5;">
@@ -384,7 +379,6 @@
           infoWindow.open(map, marker);
         });
 
-        // ✅ Info when clicking any point on the blue path
         pathPolyline.addListener("click", (e) => {
           const content = `
             <div style="font-size:14px; line-height:1.5;">
@@ -438,27 +432,21 @@
         pathPolyline.setPath(pathCoordinates);
       }
       marker.setPosition(newPosition);
-      if (autoCenter) map.panTo(newPosition);
-      updateDeviceInfo(data);
-    }
 
-    function updateDeviceInfo(data = null) {
-      const selector = document.getElementById('deviceSelector');
-      const deviceName = selector ? selector.options[selector.selectedIndex].text : "";
-      const infoEl = document.getElementById('currentDevice');
-      let info = `Device: ${deviceName} | MAC: ${currentDevice}`;
-      if (data) {
-        if (data.speed) info += ` | Speed: ${data.speed} km/h`;
-        if (data.direction) info += ` | Direction: ${data.direction}°`;
+      // 🎯 Smooth movement for auto-center
+      if (autoCenter) {
+        const currentCenter = map.getCenter();
+        const smoothLat = currentCenter.lat() + (newPosition.lat - currentCenter.lat()) * 0.2;
+        const smoothLng = currentCenter.lng() + (newPosition.lng - currentCenter.lng()) * 0.2;
+        map.panTo({ lat: smoothLat, lng: smoothLng });
       }
-      infoEl.textContent = info;
-      document.getElementById('lastUpdate').textContent =
-        `Last update: ${new Date().toLocaleTimeString()} | Points: ${pathCoordinates.length}`;
+
+      updateDeviceInfo(data);
     }
 
     function toggleAutoCenter() {
       autoCenter = !autoCenter;
-      event.target.textContent = `🎯 Auto-Center: ${autoCenter ? 'ON' : 'OFF'}`;
+      document.getElementById('autoCenterBtn').textContent = `🎯 Smooth Follow: ${autoCenter ? 'ON' : 'OFF'}`;
     }
 
     function clearPath() {
