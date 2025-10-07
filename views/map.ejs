@@ -92,6 +92,7 @@
     let smoothMovement = true;
     let currentDevice = gps.device_mac || '';
     let isAnimating = false;
+    let lastUpdateTime = null;
 
     // Validate GPS coordinates
     function validateCoords(lat, lng) {
@@ -235,12 +236,60 @@
       }
     }
 
+    function calculateSpeed(lat1, lng1, lat2, lng2, timeDiff) {
+      // Calculate distance in meters using Haversine formula
+      const R = 6371000; // Earth's radius in meters
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = R * c; // in meters
+      
+      // Calculate speed in km/h
+      const speed = (distance / timeDiff) * 3.6; // timeDiff in seconds
+      return Math.round(speed * 10) / 10; // Round to 1 decimal
+    }
+
+    function calculateBearing(lat1, lng1, lat2, lng2) {
+      // Calculate bearing (direction) between two points
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const lat1Rad = lat1 * Math.PI / 180;
+      const lat2Rad = lat2 * Math.PI / 180;
+      
+      const y = Math.sin(dLng) * Math.cos(lat2Rad);
+      const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+                Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+      
+      let bearing = Math.atan2(y, x) * 180 / Math.PI;
+      bearing = (bearing + 360) % 360; // Normalize to 0-360
+      return Math.round(bearing);
+    }
+
     function updateVehiclePosition(newPosition, data) {
       const lastPos = pathCoordinates[pathCoordinates.length - 1];
+      const currentTime = new Date();
 
       if (!lastPos || lastPos.lat !== newPosition.lat || lastPos.lng !== newPosition.lng) {
+        // Calculate direction and speed if we have a previous position
+        if (lastPos && lastUpdateTime) {
+          const timeDiff = (currentTime - lastUpdateTime) / 1000; // in seconds
+          
+          if (timeDiff > 0) {
+            const direction = calculateBearing(lastPos.lat, lastPos.lng, newPosition.lat, newPosition.lng);
+            const speed = calculateSpeed(lastPos.lat, lastPos.lng, newPosition.lat, newPosition.lng, timeDiff);
+            
+            data.direction = direction;
+            data.speed = speed;
+          }
+        }
+        
         pathCoordinates.push(newPosition);
         pathPolyline.setPath(pathCoordinates);
+        lastUpdateTime = currentTime;
       }
 
       if (marker) {
@@ -293,8 +342,6 @@
   <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap&loading=async" async defer></script>
 </body>
 </html>
-
-
 
 
 <!-- 
