@@ -243,8 +243,37 @@
       pathPolyline.setPath(pathCoordinates);
       updateDeviceInfo();
     }
-  </script>
+ 
+  // 📲 Handle device registration form
+  document.getElementById("addDeviceForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
 
+    const data = {
+      device_mac: document.getElementById("device_mac").value.trim(),
+      device_name: document.getElementById("device_name").value.trim(),
+      vehicle_number: document.getElementById("vehicle_number").value.trim(),
+      driver_name: document.getElementById("driver_name").value.trim()
+    };
+
+    try {
+      const res = await fetch("/api/devices/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+
+      const result = await res.json();
+      alert(result.message || result.error);
+
+      if (result.message) {
+        // ✅ Refresh dropdown after successful registration
+        location.reload();
+      }
+    } catch (err) {
+      alert("Error registering device: " + err.message);
+    }
+  });
+</script>
   <script async defer
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
   </script>
