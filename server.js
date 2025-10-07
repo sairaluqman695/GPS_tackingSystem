@@ -486,6 +486,33 @@ app.get("/", async (req, res) => {
   }
 });
 
+// Manual device registration (from frontend)
+app.post("/api/devices/add", async (req, res) => {
+  const { device_mac, device_name, vehicle_number, driver_name } = req.body;
+
+  if (!device_mac || !device_name)
+    return res.status(400).json({ error: "Device MAC and Name are required" });
+
+  try {
+    const check = await pool.query(`SELECT device_id FROM gps_devices WHERE device_mac=$1`, [device_mac]);
+    if (check.rows.length > 0) {
+      return res.status(400).json({ error: "Device already exists" });
+    }
+
+    await pool.query(
+      `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
+       VALUES ($1, $2, $3, $4, 'YES')`,
+      [device_mac, device_name, vehicle_number, driver_name]
+    );
+
+    res.json({ message: "✅ Device registered successfully" });
+  } catch (err) {
+    console.error("❌ Device Insert Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // -------------------- Start Server --------------------
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
