@@ -328,13 +328,213 @@
 
 
 
-//postgress// server.js
+// //postgress// server.js
+// const express = require("express");
+// const bodyParser = require("body-parser");
+// const path = require("path");
+// const { Pool } = require("pg");
+
+// const app = express();
+// const PORT = process.env.PORT || 3000;
+
+// // -------------------- PostgreSQL Setup --------------------
+// const pool = new Pool({
+//   connectionString: process.env.DB_URL || process.env.DATABASE_URL,
+//   ssl: { rejectUnauthorized: false },
+// });
+
+// // -------------------- Express Setup --------------------
+// app.set("view engine", "ejs");
+// app.set("views", path.join(__dirname, "views"));
+
+// // Body parser
+// app.use(bodyParser.json({ limit: "10mb" }));
+// app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
+
+// // CORS middleware
+// app.use((req, res, next) => {
+//   res.header("Access-Control-Allow-Origin", "*");
+//   res.header(
+//     "Access-Control-Allow-Headers",
+//     "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+//   );
+//   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+//   if (req.method === "OPTIONS") return res.sendStatus(200);
+//   next();
+// });
+
+// // -------------------- Routes --------------------
+
+// // Test database connection
+// app.get("/api/testdb", async (req, res) => {
+//   try {
+//     const result = await pool.query("SELECT NOW()");
+//     res.json({ message: "✅ Connected to PostgreSQL!", serverTime: result.rows[0].now });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // Insert GPS data + auto-register device
+// app.post("/api/gps", async (req, res) => {
+//   const { latitude, longitude, device_mac, speed, direction } = req.body;
+//   if (!latitude || !longitude || !device_mac)
+//     return res.status(400).json({ error: "Latitude, Longitude & Device MAC required" });
+
+//   try {
+//     const deviceCheck = await pool.query(
+//       `SELECT device_id FROM gps_devices WHERE device_mac=$1`,
+//       [device_mac]
+//     );
+
+//     if (deviceCheck.rows.length === 0) {
+//       await pool.query(
+//         `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
+//          VALUES ($1, $2, $3, $4, 'YES')`,
+//         [device_mac, `Device-${device_mac.slice(-6)}`, `Vehicle-${device_mac.slice(-6)}`, "Not Assigned"]
+//       );
+//       console.log(`✅ New device registered: ${device_mac}`);
+//     }
+
+//     await pool.query(
+//       `INSERT INTO gps_tracking (device_mac, latitude, longitude, speed, direction)
+//        VALUES ($1, $2, $3, $4, $5)`,
+//       [device_mac, latitude, longitude, speed || "0", direction || "0"]
+//     );
+
+//     res.json({ message: "GPS data inserted successfully", device_mac });
+//   } catch (err) {
+//     console.error("❌ DB Insert Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // Get latest location for a device
+// app.get("/api/latest", async (req, res) => {
+//   const { device_mac } = req.query;
+//   if (!device_mac) return res.status(400).json({ error: "Device MAC required" });
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT latitude, longitude, log_date, speed, direction
+//        FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
+//       [device_mac]
+//     );
+
+//     res.json(result.rows.length > 0 ? result.rows[0] : { message: "No data found" });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // Get device history
+// app.get("/api/history/:device_mac", async (req, res) => {
+//   const { device_mac } = req.params;
+
+//   try {
+//     const result = await pool.query(
+//       `SELECT latitude, longitude, log_date, speed, direction
+//        FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC`,
+//       [device_mac]
+//     );
+//     res.json(result.rows);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // List all active devices
+// app.get("/api/devices", async (req, res) => {
+//   try {
+//     const result = await pool.query(
+//       `SELECT device_mac, device_name, vehicle_number, driver_name 
+//        FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
+//     );
+//     res.json(result.rows);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // -------------------- Homepage --------------------
+// app.get("/", async (req, res) => {
+//   try {
+//     const devicesResult = await pool.query(
+//       `SELECT device_mac, device_name, vehicle_number FROM gps_devices WHERE is_active='YES' ORDER BY device_name`
+//     );
+
+//     const devices = devicesResult.rows;
+//     let gpsData = null;
+//     const defaultDevice = devices.length > 0 ? devices[0].device_mac : null;
+
+//     if (defaultDevice) {
+//       const gpsResult = await pool.query(
+//         `SELECT latitude, longitude, log_date FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
+//         [defaultDevice]
+//       );
+
+//       if (gpsResult.rows.length > 0) {
+//         const { latitude, longitude, log_date } = gpsResult.rows[0];
+//         gpsData = { latitude, longitude, log_date, device_mac: defaultDevice };
+//       }
+//     }
+
+//     res.render("map", { gpsData, devices, selectedDevice: defaultDevice });
+//   } catch (err) {
+//     console.error("DB Error:", err);
+//     res.status(500).send("Error loading map");
+//   }
+// });
+
+// // Manual device registration (from frontend)
+// app.post("/api/devices/add", async (req, res) => {
+//   const { device_mac, device_name, vehicle_number, driver_name } = req.body;
+
+//   if (!device_mac || !device_name)
+//     return res.status(400).json({ error: "Device MAC and Name are required" });
+
+//   try {
+//     const check = await pool.query(`SELECT device_id FROM gps_devices WHERE device_mac=$1`, [device_mac]);
+//     if (check.rows.length > 0) {
+//       return res.status(400).json({ error: "Device already exists" });
+//     }
+
+//     await pool.query(
+//       `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
+//        VALUES ($1, $2, $3, $4, 'YES')`,
+//       [device_mac, device_name, vehicle_number, driver_name]
+//     );
+
+//     res.json({ message: "✅ Device registered successfully" });
+//   } catch (err) {
+//     console.error("❌ Device Insert Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+// // -------------------- Start Server --------------------
+// app.listen(PORT, () => {
+//   console.log(`🚀 Server running on port ${PORT}`);
+//   console.log(`✅ Connected to PostgreSQL successfully!`);
+// });
+
+
+
+
+
+// server.js
 const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
 const { Pool } = require("pg");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
 const PORT = process.env.PORT || 3000;
 
 // -------------------- PostgreSQL Setup --------------------
@@ -346,12 +546,10 @@ const pool = new Pool({
 // -------------------- Express Setup --------------------
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
-
-// Body parser
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
 
-// CORS middleware
+// Allow CORS
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header(
@@ -363,9 +561,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// -------------------- Routes --------------------
+// -------------------- Socket.IO Setup --------------------
+io.on("connection", (socket) => {
+  console.log("✅ New client connected:", socket.id);
+  socket.on("disconnect", () => {
+    console.log("❌ Client disconnected:", socket.id);
+  });
+});
 
-// Test database connection
+// -------------------- API Routes --------------------
+
+// Test DB connection
 app.get("/api/testdb", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
@@ -375,13 +581,14 @@ app.get("/api/testdb", async (req, res) => {
   }
 });
 
-// Insert GPS data + auto-register device
+// Insert GPS data + auto-register + broadcast live
 app.post("/api/gps", async (req, res) => {
   const { latitude, longitude, device_mac, speed, direction } = req.body;
   if (!latitude || !longitude || !device_mac)
     return res.status(400).json({ error: "Latitude, Longitude & Device MAC required" });
 
   try {
+    // Auto-register device if not exists
     const deviceCheck = await pool.query(
       `SELECT device_id FROM gps_devices WHERE device_mac=$1`,
       [device_mac]
@@ -393,23 +600,27 @@ app.post("/api/gps", async (req, res) => {
          VALUES ($1, $2, $3, $4, 'YES')`,
         [device_mac, `Device-${device_mac.slice(-6)}`, `Vehicle-${device_mac.slice(-6)}`, "Not Assigned"]
       );
-      console.log(`✅ New device registered: ${device_mac}`);
+      console.log(`✅ Auto-registered new device: ${device_mac}`);
     }
 
+    // Insert tracking data
     await pool.query(
       `INSERT INTO gps_tracking (device_mac, latitude, longitude, speed, direction)
        VALUES ($1, $2, $3, $4, $5)`,
       [device_mac, latitude, longitude, speed || "0", direction || "0"]
     );
 
-    res.json({ message: "GPS data inserted successfully", device_mac });
+    // 🔥 Real-time broadcast via Socket.IO
+    io.emit("gps_update", { device_mac, latitude, longitude, speed, direction });
+
+    res.json({ message: "GPS data inserted & broadcasted", device_mac });
   } catch (err) {
     console.error("❌ DB Insert Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get latest location for a device
+// Get latest device location
 app.get("/api/latest", async (req, res) => {
   const { device_mac } = req.query;
   if (!device_mac) return res.status(400).json({ error: "Device MAC required" });
@@ -420,17 +631,15 @@ app.get("/api/latest", async (req, res) => {
        FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
       [device_mac]
     );
-
     res.json(result.rows.length > 0 ? result.rows[0] : { message: "No data found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get device history
+// Get historical track for a device
 app.get("/api/history/:device_mac", async (req, res) => {
   const { device_mac } = req.params;
-
   try {
     const result = await pool.query(
       `SELECT latitude, longitude, log_date, speed, direction
@@ -443,7 +652,7 @@ app.get("/api/history/:device_mac", async (req, res) => {
   }
 });
 
-// List all active devices
+// List all devices
 app.get("/api/devices", async (req, res) => {
   try {
     const result = await pool.query(
@@ -452,6 +661,29 @@ app.get("/api/devices", async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manual device registration
+app.post("/api/devices/add", async (req, res) => {
+  const { device_mac, device_name, vehicle_number, driver_name } = req.body;
+  if (!device_mac || !device_name)
+    return res.status(400).json({ error: "Device MAC and Name are required" });
+
+  try {
+    const check = await pool.query(`SELECT device_id FROM gps_devices WHERE device_mac=$1`, [device_mac]);
+    if (check.rows.length > 0)
+      return res.status(400).json({ error: "Device already exists" });
+
+    await pool.query(
+      `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
+       VALUES ($1, $2, $3, $4, 'YES')`,
+      [device_mac, device_name, vehicle_number, driver_name]
+    );
+    res.json({ message: "✅ Device registered successfully" });
+  } catch (err) {
+    console.error("❌ Device Insert Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -472,7 +704,6 @@ app.get("/", async (req, res) => {
         `SELECT latitude, longitude, log_date FROM gps_tracking WHERE device_mac=$1 ORDER BY log_date DESC LIMIT 1`,
         [defaultDevice]
       );
-
       if (gpsResult.rows.length > 0) {
         const { latitude, longitude, log_date } = gpsResult.rows[0];
         gpsData = { latitude, longitude, log_date, device_mac: defaultDevice };
@@ -486,41 +717,11 @@ app.get("/", async (req, res) => {
   }
 });
 
-// Manual device registration (from frontend)
-app.post("/api/devices/add", async (req, res) => {
-  const { device_mac, device_name, vehicle_number, driver_name } = req.body;
-
-  if (!device_mac || !device_name)
-    return res.status(400).json({ error: "Device MAC and Name are required" });
-
-  try {
-    const check = await pool.query(`SELECT device_id FROM gps_devices WHERE device_mac=$1`, [device_mac]);
-    if (check.rows.length > 0) {
-      return res.status(400).json({ error: "Device already exists" });
-    }
-
-    await pool.query(
-      `INSERT INTO gps_devices (device_mac, device_name, vehicle_number, driver_name, is_active)
-       VALUES ($1, $2, $3, $4, 'YES')`,
-      [device_mac, device_name, vehicle_number, driver_name]
-    );
-
-    res.json({ message: "✅ Device registered successfully" });
-  } catch (err) {
-    console.error("❌ Device Insert Error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
 // -------------------- Start Server --------------------
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`✅ Connected to PostgreSQL successfully!`);
+server.listen(PORT, () => {
+  console.log(`🚀 Real-time GPS Server running on port ${PORT}`);
+  console.log(`✅ PostgreSQL connected successfully`);
 });
-
-
-
 
 
 
