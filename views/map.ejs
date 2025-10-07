@@ -38,6 +38,15 @@
       font-family: Arial, sans-serif;
       padding: 10px;
     }
+    /* Custom marker style */
+    .custom-marker {
+      width: 20px;
+      height: 20px;
+      background-color: #FF0000;
+      border: 3px solid #FFFFFF;
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
   </style>
 </head>
 <body>
@@ -101,12 +110,16 @@
       gps.lng = 74.495567;
     }
 
-    function initMap() {
+    async function initMap() {
       const center = { lat: gps.lat, lng: gps.lng };
       
-      map = new google.maps.Map(document.getElementById("map"), {
+      const { Map } = await google.maps.importLibrary("maps");
+      const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+      
+      map = new Map(document.getElementById("map"), {
         zoom: 16,
         center: center,
+        mapId: "GPS_TRACKER_MAP", // Required for AdvancedMarkerElement
         mapTypeId: 'roadmap'
       });
 
@@ -148,32 +161,31 @@
           map: map
         });
 
-        // Marker on latest position
+        // Create custom marker element
         const lastPoint = pathCoordinates[pathCoordinates.length - 1];
-        if (marker) marker.setMap(null);
+        const markerElement = document.createElement('div');
+        markerElement.className = 'custom-marker';
         
-        marker = new google.maps.Marker({
+        if (marker) marker.map = null;
+        
+        // Use AdvancedMarkerElement
+        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+        marker = new AdvancedMarkerElement({
           position: lastPoint,
           map: map,
           title: "Vehicle Location",
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: "#FF0000",
-            fillOpacity: 1,
-            strokeColor: "#FFFFFF",
-            strokeWeight: 2
-          }
+          content: markerElement
         });
 
+        // Add click listener
         marker.addListener('click', () => {
-          const pos = marker.getPosition();
+          const pos = marker.position;
           const content = `
             <div class="info-window">
               <strong>📍 Vehicle Location</strong><br>
               Device: ${currentDevice}<br>
-              Lat: ${pos.lat().toFixed(6)}<br>
-              Lng: ${pos.lng().toFixed(6)}<br>
+              Lat: ${pos.lat.toFixed(6)}<br>
+              Lng: ${pos.lng.toFixed(6)}<br>
               Last Update: ${new Date().toLocaleTimeString()}
             </div>`;
           infoWindow.setContent(content);
@@ -231,7 +243,9 @@
         pathPolyline.setPath(pathCoordinates);
       }
 
-      marker.setPosition(newPosition);
+      if (marker) {
+        marker.position = newPosition;
+      }
       if (autoCenter) map.panTo(newPosition);
       updateDeviceInfo(data);
     }
