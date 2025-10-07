@@ -38,15 +38,6 @@
       font-family: Arial, sans-serif;
       padding: 10px;
     }
-    /* Custom marker style */
-    .custom-marker {
-      width: 20px;
-      height: 20px;
-      background-color: #FF0000;
-      border: 3px solid #FFFFFF;
-      border-radius: 50%;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    }
   </style>
 </head>
 <body>
@@ -65,21 +56,34 @@
 
     <div class="device-info" id="currentDevice">Device: Loading...</div>
 
-    <div class="controls">
-      <button onclick="toggleSmoothMovement()" class="smooth-controls">🎯 Smooth Movement: ON</button>
-      <button onclick="clearPath()">🗑️ Clear Path</button>
-      <button onclick="toggleAutoCenter()">🎯 Auto-Center: ON</button>
-    </div>
+ <div class="controls">
+  <button onclick="toggleSmoothMovement()" class="smooth-controls">🎯 Smooth Movement: ON</button>
+  <button onclick="clearPath()">🗑️ Clear Path</button>
+  <button onclick="toggleAutoCenter()">🎯 Auto-Center: ON</button>
+</div>
 
-    <div id="lastUpdate">Last update: Loading...</div>
+<div id="lastUpdate">Last update: Loading...</div>
+
+<!-- 🚀 Add Device Registration Form -->
+<!-- <div class="device-registration" style="margin-top:15px; background:#eef; padding:10px; border-radius:8px;">
+  <h3>➕ Register New Device</h3>
+  <form id="addDeviceForm">
+    <input type="text" id="device_mac" placeholder="Device MAC (e.g. EC:64:C9:C4:72:6A)" required style="width:100%; margin:5px 0;"><br>
+    <input type="text" id="device_name" placeholder="Device Name (e.g. Tracker-1)" required style="width:100%; margin:5px 0;"><br>
+    <input type="text" id="vehicle_number" placeholder="Vehicle Number" required style="width:100%; margin:5px 0;"><br>
+    <input type="text" id="driver_name" placeholder="Driver Name" required style="width:100%; margin:5px 0;"><br>
+    <button type="submit" style="background:#28a745;">Register Device</button>
+  </form>
+</div> -->
+
   </div>
 
   <div id="map"></div>
 
   <script id="gps-data" type="application/json">
     <%- JSON.stringify(
-      gpsData && !isNaN(parseFloat(gpsData.latitude)) && !isNaN(parseFloat(gpsData.longitude))
-        ? { lat: parseFloat(gpsData.latitude), lng: parseFloat(gpsData.longitude), device_mac: gpsData.device_mac }
+      gpsData && !isNaN(gpsData.latitude) && !isNaN(gpsData.longitude)
+        ? { lat: gpsData.latitude, lng: gpsData.longitude, device_mac: gpsData.device_mac }
         : { lat: 32.447811, lng: 74.495567, device_mac: '' }
     ) %>
   </script>
@@ -90,36 +94,13 @@
     let pathCoordinates = [];
     let autoCenter = true;
     let smoothMovement = true;
-    let currentDevice = gps.device_mac || '';
+    let currentDevice = gps.device_mac;
     let isAnimating = false;
 
-    // Validate GPS coordinates
-    function validateCoords(lat, lng) {
-      const latitude = parseFloat(lat);
-      const longitude = parseFloat(lng);
-      return !isNaN(latitude) && !isNaN(longitude) && 
-             isFinite(latitude) && isFinite(longitude) &&
-             latitude >= -90 && latitude <= 90 &&
-             longitude >= -180 && longitude <= 180;
-    }
-
-    // Ensure valid initial coordinates
-    if (!validateCoords(gps.lat, gps.lng)) {
-      console.warn('Invalid GPS coordinates, using default');
-      gps.lat = 32.447811;
-      gps.lng = 74.495567;
-    }
-
-    async function initMap() {
-      const center = { lat: gps.lat, lng: gps.lng };
-      
-      const { Map } = await google.maps.importLibrary("maps");
-      const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-      
-      map = new Map(document.getElementById("map"), {
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
         zoom: 16,
-        center: center,
-        mapId: "GPS_TRACKER_MAP", // Required for AdvancedMarkerElement
+        center: { lat: gps.lat, lng: gps.lng },
         mapTypeId: 'roadmap'
       });
 
@@ -128,25 +109,17 @@
     }
 
     async function initializeTracking() {
-      if (!currentDevice) {
-        console.warn('No device selected');
-        return;
-      }
-
+      // Fetch historical points for selected device
       try {
         const res = await fetch(`/api/history/${currentDevice}`);
         const history = await res.json();
 
         if (history.length > 0) {
-          pathCoordinates = history
-            .filter(d => validateCoords(d.latitude, d.longitude))
-            .map(d => ({
-              lat: parseFloat(d.latitude),
-              lng: parseFloat(d.longitude)
-            }));
-        }
-        
-        if (pathCoordinates.length === 0) {
+          pathCoordinates = history.map(d => ({
+            lat: Number(d.latitude),
+            lng: Number(d.longitude)
+          }));
+        } else {
           pathCoordinates = [{ lat: gps.lat, lng: gps.lng }];
         }
 
@@ -161,31 +134,27 @@
           map: map
         });
 
-        // Create custom marker element
+        // Marker on latest position
         const lastPoint = pathCoordinates[pathCoordinates.length - 1];
-        const markerElement = document.createElement('div');
-        markerElement.className = 'custom-marker';
-        
-        if (marker) marker.map = null;
-        
-        // Use AdvancedMarkerElement
-        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-        marker = new AdvancedMarkerElement({
+        if (marker) marker.setMap(null);
+        marker = new google.maps.Marker({
           position: lastPoint,
           map: map,
           title: "Vehicle Location",
-          content: markerElement
+          icon: {
+            url: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="red" stroke="white" stroke-width="2"/></svg>',
+            scaledSize: new google.maps.Size(20, 20),
+            anchor: new google.maps.Point(10, 10)
+          }
         });
 
-        // Add click listener
         marker.addListener('click', () => {
-          const pos = marker.position;
           const content = `
             <div class="info-window">
               <strong>📍 Vehicle Location</strong><br>
               Device: ${currentDevice}<br>
-              Lat: ${pos.lat.toFixed(6)}<br>
-              Lng: ${pos.lng.toFixed(6)}<br>
+              Lat: ${marker.getPosition().lat().toFixed(6)}<br>
+              Lng: ${marker.getPosition().lng().toFixed(6)}<br>
               Last Update: ${new Date().toLocaleTimeString()}
             </div>`;
           infoWindow.setContent(content);
@@ -220,15 +189,9 @@
       try {
         const res = await fetch(`/api/latest?device_mac=${currentDevice}`);
         const data = await res.json();
-        
         if (data.latitude !== undefined && data.longitude !== undefined) {
-          if (validateCoords(data.latitude, data.longitude)) {
-            const newPosition = { 
-              lat: parseFloat(data.latitude), 
-              lng: parseFloat(data.longitude) 
-            };
-            updateVehiclePosition(newPosition, data);
-          }
+          const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
+          updateVehiclePosition(newPosition, data);
         }
       } catch (err) {
         console.error("Error fetching latest:", err);
@@ -243,23 +206,19 @@
         pathPolyline.setPath(pathCoordinates);
       }
 
-      if (marker) {
-        marker.position = newPosition;
-      }
+      marker.setPosition(newPosition);
       if (autoCenter) map.panTo(newPosition);
       updateDeviceInfo(data);
     }
 
     function updateDeviceInfo(data = null) {
       const selector = document.getElementById('deviceSelector');
-      const deviceName = selector.options[selector.selectedIndex]?.text || 'Unknown';
+      const deviceName = selector.options[selector.selectedIndex].text;
       let info = `Device: ${deviceName} | MAC: ${currentDevice}`;
-      
       if (data) {
         if (data.speed) info += ` | Speed: ${data.speed} km/h`;
         if (data.direction) info += ` | Direction: ${data.direction}°`;
       }
-      
       document.getElementById('currentDevice').textContent = info;
       document.getElementById('lastUpdate').textContent =
         `Last update: ${new Date().toLocaleTimeString()} | Points: ${pathCoordinates.length}`;
@@ -276,7 +235,6 @@
       autoCenter = !autoCenter;
       const btn = document.querySelector('button[onclick="toggleAutoCenter()"]');
       btn.textContent = `🎯 Auto-Center: ${autoCenter ? 'ON' : 'OFF'}`;
-      btn.style.background = autoCenter ? '#28a745' : '#dc3545';
     }
 
     function clearPath() {
@@ -285,14 +243,43 @@
       pathPolyline.setPath(pathCoordinates);
       updateDeviceInfo();
     }
+ 
+  // 📲 Handle device registration form
+  // document.getElementById("addDeviceForm").addEventListener("submit", async (e) => {
+  //   e.preventDefault();
 
-    // Make initMap globally available
-    window.initMap = initMap;
+  //   const data = {
+  //     device_mac: document.getElementById("device_mac").value.trim(),
+  //     device_name: document.getElementById("device_name").value.trim(),
+  //     vehicle_number: document.getElementById("vehicle_number").value.trim(),
+  //     driver_name: document.getElementById("driver_name").value.trim()
+  //   };
+
+  //   try {
+  //     const res = await fetch("/api/devices/add", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify(data)
+  //     });
+
+  //     const result = await res.json();
+  //     alert(result.message || result.error);
+
+  //     if (result.message) {
+  //       // ✅ Refresh dropdown after successful registration
+  //       location.reload();
+  //     }
+  //   } catch (err) {
+  //     alert("Error registering device: " + err.message);
+  //   }
+  // });
+</script>
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
   </script>
-  
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap&loading=async" async defer></script>
 </body>
 </html>
+
 
 
 
