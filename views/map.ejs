@@ -65,7 +65,7 @@
 <div id="lastUpdate">Last update: Loading...</div>
 
 <!-- 🚀 Add Device Registration Form -->
-<div class="device-registration" style="margin-top:15px; background:#eef; padding:10px; border-radius:8px;">
+<!-- <div class="device-registration" style="margin-top:15px; background:#eef; padding:10px; border-radius:8px;">
   <h3>➕ Register New Device</h3>
   <form id="addDeviceForm">
     <input type="text" id="device_mac" placeholder="Device MAC (e.g. EC:64:C9:C4:72:6A)" required style="width:100%; margin:5px 0;"><br>
@@ -74,7 +74,7 @@
     <input type="text" id="driver_name" placeholder="Driver Name" required style="width:100%; margin:5px 0;"><br>
     <button type="submit" style="background:#28a745;">Register Device</button>
   </form>
-</div>
+</div> -->
 
   </div>
 
@@ -245,34 +245,34 @@
     }
  
   // 📲 Handle device registration form
-  document.getElementById("addDeviceForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+  // document.getElementById("addDeviceForm").addEventListener("submit", async (e) => {
+  //   e.preventDefault();
 
-    const data = {
-      device_mac: document.getElementById("device_mac").value.trim(),
-      device_name: document.getElementById("device_name").value.trim(),
-      vehicle_number: document.getElementById("vehicle_number").value.trim(),
-      driver_name: document.getElementById("driver_name").value.trim()
-    };
+  //   const data = {
+  //     device_mac: document.getElementById("device_mac").value.trim(),
+  //     device_name: document.getElementById("device_name").value.trim(),
+  //     vehicle_number: document.getElementById("vehicle_number").value.trim(),
+  //     driver_name: document.getElementById("driver_name").value.trim()
+  //   };
 
-    try {
-      const res = await fetch("/api/devices/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      });
+  //   try {
+  //     const res = await fetch("/api/devices/add", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify(data)
+  //     });
 
-      const result = await res.json();
-      alert(result.message || result.error);
+  //     const result = await res.json();
+  //     alert(result.message || result.error);
 
-      if (result.message) {
-        // ✅ Refresh dropdown after successful registration
-        location.reload();
-      }
-    } catch (err) {
-      alert("Error registering device: " + err.message);
-    }
-  });
+  //     if (result.message) {
+  //       // ✅ Refresh dropdown after successful registration
+  //       location.reload();
+  //     }
+  //   } catch (err) {
+  //     alert("Error registering device: " + err.message);
+  //   }
+  // });
 </script>
   <script async defer
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
