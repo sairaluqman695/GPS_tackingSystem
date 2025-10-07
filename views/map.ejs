@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html>
 <head>
   <title>Multi Device GPS Tracker</title>
@@ -237,6 +237,268 @@
   </script>
 </body>
 </html>
+ -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ <!DOCTYPE html>
+<html>
+<head>
+  <title>Multi Device GPS Tracker</title>
+  <style>
+    #map { height: 80vh; width: 100%; }
+    .device-panel {
+      background: #f8f9fa;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .device-selector {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .device-info {
+      background: #007bff;
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 5px 0;
+    }
+    .controls { margin: 10px 0; }
+    button { 
+      padding: 8px 15px; 
+      margin: 5px; 
+      background: #007bff; 
+      color: white; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer; 
+    }
+    .info-window { font-family: Arial, sans-serif; padding: 10px; }
+  </style>
+</head>
+<body>
+  <h2>🚗 Multi Device GPS Tracking</h2>
+  
+  <div class="device-panel">
+    <label><strong>📱 Select Device:</strong></label>
+    <select class="device-selector" id="deviceSelector" onchange="changeDevice()">
+      <% devices.forEach(device => { %>
+        <option value="<%= device.device_mac %>" 
+                <%= selectedDevice === device.device_mac ? 'selected' : '' %>>
+          <%= device.device_name %> - <%= device.vehicle_number %>
+        </option>
+      <% }); %>
+    </select>
+
+    <div class="device-info" id="currentDevice">Device: Loading...</div>
+
+    <div class="controls">
+      <button onclick="toggleSmoothMovement()" class="smooth-controls">🎯 Smooth Movement: ON</button>
+      <button onclick="clearPath()">🗑️ Clear Path</button>
+      <button onclick="toggleAutoCenter()">🎯 Auto-Center: ON</button>
+    </div>
+    
+    <div id="lastUpdate">Last update: Loading...</div>
+  </div>
+
+  <div id="map"></div>
+
+  <script id="gps-data" type="application/json">
+    <%- JSON.stringify(
+      gpsData && !isNaN(gpsData.latitude) && !isNaN(gpsData.longitude)
+        ? { lat: gpsData.latitude, lng: gpsData.longitude, device_mac: gpsData.device_mac }
+        : { lat: 32.447811, lng: 74.495567, device_mac: '' }
+    ) %>
+  </script>
+
+  <!-- ✅ Add Socket.IO -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <script>
+    let gps = JSON.parse(document.getElementById('gps-data').textContent);
+    let map, marker, pathPolyline, infoWindow;
+    let pathCoordinates = [];
+    let autoCenter = true;
+    let smoothMovement = true;
+    let currentDevice = gps.device_mac;
+    let isAnimating = false;
+
+    const socket = io(); // ✅ connect to socket
+    socket.on("connect", () => {
+      console.log("✅ Connected to Socket.IO:", socket.id);
+      if (currentDevice) socket.emit("joinDevice", currentDevice);
+    });
+
+    // ✅ Listen for real-time GPS updates
+    socket.on("gpsUpdate", (data) => {
+      if (data.device_mac === currentDevice) {
+        console.log("📍 Live GPS Update:", data);
+        const newPosition = { lat: Number(data.latitude), lng: Number(data.longitude) };
+        updateVehiclePosition(newPosition, data);
+      }
+    });
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 16,
+        center: { lat: gps.lat, lng: gps.lng },
+        mapTypeId: 'roadmap'
+      });
+
+      infoWindow = new google.maps.InfoWindow({ content: "Loading..." });
+      initializeTracking();
+    }
+
+    async function initializeTracking() {
+      try {
+        const res = await fetch(`/api/history/${currentDevice}`);
+        const history = await res.json();
+
+        if (history.length > 0) {
+          pathCoordinates = history.map(d => ({ lat: +d.latitude, lng: +d.longitude }));
+        } else {
+          pathCoordinates = [{ lat: gps.lat, lng: gps.lng }];
+        }
+
+        if (pathPolyline) pathPolyline.setMap(null);
+        pathPolyline = new google.maps.Polyline({
+          path: pathCoordinates,
+          geodesic: true,
+          strokeColor: "#007bff",
+          strokeOpacity: 1.0,
+          strokeWeight: 4,
+          map
+        });
+
+        const lastPoint = pathCoordinates[pathCoordinates.length - 1];
+        if (marker) marker.setMap(null);
+        marker = new google.maps.Marker({
+          position: lastPoint,
+          map,
+          title: "Vehicle Location",
+          icon: {
+            url: 'data:image/svg+xml;utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="red" stroke="white" stroke-width="2"/></svg>',
+            scaledSize: new google.maps.Size(20, 20),
+            anchor: new google.maps.Point(10, 10)
+          }
+        });
+
+        marker.addListener('click', () => {
+          const content = `
+            <div class="info-window">
+              <strong>📍 Vehicle Location</strong><br>
+              Device: ${currentDevice}<br>
+              Lat: ${marker.getPosition().lat().toFixed(6)}<br>
+              Lng: ${marker.getPosition().lng().toFixed(6)}<br>
+              Last Update: ${new Date().toLocaleTimeString()}
+            </div>`;
+          infoWindow.setContent(content);
+          infoWindow.open(map, marker);
+        });
+
+        updateDeviceInfo();
+
+        // ❌ remove old polling-based system
+        // startLiveTracking();
+
+      } catch (err) {
+        console.error("Error loading history:", err);
+      }
+    }
+
+    function changeDevice() {
+      const selector = document.getElementById('deviceSelector');
+      currentDevice = selector.value;
+
+      // 🔄 rejoin new device room
+      socket.emit("joinDevice", currentDevice);
+
+      pathCoordinates = [];
+      isAnimating = false;
+      initializeTracking();
+    }
+
+    function updateVehiclePosition(newPosition, data) {
+      const lastPos = pathCoordinates[pathCoordinates.length - 1];
+      if (!lastPos || lastPos.lat !== newPosition.lat || lastPos.lng !== newPosition.lng) {
+        pathCoordinates.push(newPosition);
+        pathPolyline.setPath(pathCoordinates);
+      }
+
+      marker.setPosition(newPosition);
+      if (autoCenter) map.panTo(newPosition);
+      updateDeviceInfo(data);
+    }
+
+    function updateDeviceInfo(data = null) {
+      const selector = document.getElementById('deviceSelector');
+      const deviceName = selector.options[selector.selectedIndex].text;
+      let info = `Device: ${deviceName} | MAC: ${currentDevice}`;
+      if (data) {
+        if (data.speed) info += ` | Speed: ${data.speed} km/h`;
+        if (data.direction) info += ` | Direction: ${data.direction}°`;
+      }
+      document.getElementById('currentDevice').textContent = info;
+      document.getElementById('lastUpdate').textContent =
+        `Last update: ${new Date().toLocaleTimeString()} | Points: ${pathCoordinates.length}`;
+    }
+
+    function toggleSmoothMovement() {
+      smoothMovement = !smoothMovement;
+      const btn = document.querySelector('.smooth-controls');
+      btn.textContent = `🎯 Smooth Movement: ${smoothMovement ? 'ON' : 'OFF'}`;
+      btn.style.background = smoothMovement ? '#28a745' : '#dc3545';
+    }
+
+    function toggleAutoCenter() {
+      autoCenter = !autoCenter;
+      const btn = document.querySelector('button[onclick="toggleAutoCenter()"]');
+      btn.textContent = `🎯 Auto-Center: ${autoCenter ? 'ON' : 'OFF'}`;
+    }
+
+    function clearPath() {
+      const lastPos = pathCoordinates[pathCoordinates.length - 1];
+      pathCoordinates = lastPos ? [lastPos] : [];
+      pathPolyline.setPath(pathCoordinates);
+      updateDeviceInfo();
+    }
+  </script>
+
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBECgGTp-4Xt3526NLYDyZd8foC0Sew-ag&callback=initMap">
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
 
 
 
